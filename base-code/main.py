@@ -33,7 +33,7 @@ from modules.colorbar_marker import get_continuous_cmap
 
 #%% Logging setup
 loger_main = logging.getLogger('main')
-loger_main.setLevel(logging.DEBUG)
+loger_main.setLevel(logging.TRACE)
 
 stream_handler = colorlog.StreamHandler()
 formatter = ColoredFormatter(
@@ -134,11 +134,10 @@ if loger_main.isEnabledFor(logging.DEBUG):
         loger_main.warning('Rho is a projector: False')
 
 
-
 # Marker per site
 S = np.kron(np.eye(Nsites), np.kron(tau_0, sigma_z))
 loger_main.info('Calculating local marker: ...')
-local_marker = local_marker(lattice.x, lattice.y, rho, S, spin_mixing=spin_mixing)
+local_marker = local_marker(lattice.x, lattice.y, rho, S, spin_mixing=spin_mixing, shift_per_site=False, Nx=Nx, Ny=Ny)
 avg_bulk_marker = bulk_avg_marker(site_pos, local_marker, Nx, Ny, cutoff_x=cutoff_bulk_x, cutoff_y=cutoff_bulk_y)
 loger_main.info(f'Calculating local marker: Done || Bulk average value: {avg_bulk_marker:.2f}')
 if loger_main.isEnabledFor(logging.DEBUG):
@@ -260,7 +259,7 @@ cbar = fig1.colorbar(colorbar_invariants, cax=cax, orientation='vertical')
 cbar.ax.tick_params(which='major', width=0.75, labelsize=fontsize)
 cbar.set_label(label='$\\nu(r)$', labelpad=-10, fontsize=20)
 
-fig1.savefig('ex_test2.pdf', format='pdf')
+# fig1.savefig('ex_test2.pdf', format='pdf')
 
 plt.show()
 

@@ -22,7 +22,7 @@ from colorlog import ColoredFormatter
 
 # %% Logging setup
 loger_kwant = logging.getLogger('kwant')
-loger_kwant.setLevel(logging.INFO)
+loger_kwant.setLevel(logging.DEBUG)
 
 stream_handler = colorlog.StreamHandler()
 formatter = ColoredFormatter(
@@ -206,7 +206,7 @@ def BHZ_Hamiltonian_Kwant(lattice_tree, param_dict):
 
 
 #%% OPDM and density
-def OPDM(eigenvectors, filling=0.5, ):
+def OPDM(eigenvectors, filling=0.5):
 
     loger_kwant.info('Calculating OPDM...')
     dim = eigenvectors.shape[0]
@@ -251,45 +251,62 @@ def occupied_zero_energy_DoS(rho_eigvecs, H, Nsites, tol=1e-5, filling=0.5):
 
 
 
-#%% Local markers
-def local_marker(x, y, rho, S, spin_mixing=False):
+#%% Local marker ED
+def local_marker(x, y, rho, S, spin_mixing=False, shift_per_site=False, Nx=None, Ny=None):
     """
     Input:
     x, y -> np.ndarray: coordinates of the lattice sites
     P -> np.ndarray: One particle density matrix (projector onto the filled bands)
     S -> np.ndarray: onsite auxiliary (kronecker product of onsite chiral symmetry)
+    Spin-mixing -> bool: whether spin is conserved or not
+    shift_per_site -> bool: Whether the marker is calculated at each site by shifting its position to the centre
+    Nx -> int: number of sites along x
+    Ny -> int: number of sites along y
 
     Output:
     local_marker -> np.ndarray: local z2 marker at each site
     """
-    # Operators for calculating the marker
-    X, Y = np.repeat(x, 4), np.repeat(y, 4)
-    X = np.reshape(X, (len(X), 1))
-    Y = np.reshape(Y, (len(Y), 1))
 
     if spin_mixing:
+        # vals, vecs = eigh(S @ rho + rho @ S - S)
+        # PS = vecs @ np.diag(np.sign(vals)) @ vecs.T.conj()
+        # C = - 1 / (32 * pi)
         I = np.eye(rho.shape[0], dtype=np.complex128)
         Q = I - 2 * rho
         Qp = 2 * (Q + S @ Q @ S)
         vals, vecs = eigh(Qp)
-        if np.min(np.abs(vals)) < 1e-8:
-            loger_kwant.warning('Qp has near-zero eigenvalues; marker may be ill-defined')
         Qp = vecs @ np.diag(np.sign(vals)) @ vecs.T.conj()
-        rhop = (I - Qp) / 2
-        PS = rhop @ S
-        XPS = X * PS
-        YPS = Y * PS
+        rho = (I - Qp) / 2
+        PS = rho @ S
+        C = pi
     else:
         PS = rho @ S
+        C = pi
+
+    local_marker = np.zeros((len(x),))
+    if shift_per_site:
+        if Nx is None or Ny is None:
+            loger_kwant.error('To shift sites Nx and Ny must be specified')
+        for i in range(len(x)):
+            loger_kwant.trace(f'Calculating marker at site: {i}/{len(x)-1}')
+            X, Y = np.repeat(x - 0.5 * (Nx - 1), 4), np.repeat(y - 0.5 * (Ny - 1), 4)
+            X = np.reshape(X, (len(X), 1))
+            Y = np.reshape(Y, (len(Y), 1))
+            XPS = X * PS
+            YPS = Y * PS
+            M = PS @ XPS @ YPS - PS @ YPS @ XPS
+            idx = 4 * i
+            local_marker[i] = C * np.trace(np.imag(M[idx: idx + 4, idx: idx + 4]))
+    else:
+        X, Y = np.repeat(x, 4), np.repeat(y, 4)
+        X = np.reshape(X, (len(X), 1))
+        Y = np.reshape(Y, (len(Y), 1))
         XPS = X * PS
         YPS = Y * PS
-
-    # Local z2 marker
-    local_marker = np.zeros((len(x), ))
-    M = PS @ XPS @ YPS  - PS @ YPS @ XPS
-    for i in range(len(x)):
-        idx = 4 * i
-        local_marker[i] = pi * np.trace(np.imag(M[idx: idx + 4, idx: idx + 4]))
+        M = PS @ XPS @ YPS - PS @ YPS @ XPS
+        for i in range(len(x)):
+            idx = 4 * i
+            local_marker[i] = C * np.trace(np.imag(M[idx: idx + 4, idx: idx + 4]))
 
     return local_marker
 
@@ -301,3 +318,170 @@ def bulk_avg_marker(site_pos, local_marker, Nx, Ny, cutoff_x=0.25, cutoff_y=0.25
     bool_site = bool_x_right & bool_x_left & bool_y_right & bool_y_left
     return np.sum(local_marker[bool_site]) / np.sum(bool_site)
 
+
+#%% Local marker KPM
+def kpm_vector_generator(H, state, max_moments):
+    """
+    Input:
+    H -> np.ndarray: Hamiltonian
+    state -> np.ndarray: state to which we apply the kpm expansion
+    max_moments -> int: number of moments to use in the KPM expansion
+
+    Output:
+    np.ndarray: yields the state after each order of the expansion
+    """
+
+    # 0th moment in the expansion: Just the quantum state to which we are applying the operator
+    alpha = state
+    n = 0
+    yield alpha
+
+    # 1st moment in the expansion: Applying the Hamiltonian
+    n += 1
+    alpha_prev = alpha.copy()
+    alpha = H @ alpha
+    yield alpha
+
+    # nth moments of the expansion: Follows by the recurrence of the Chebyshev polynomials
+    n += 1
+    while n < max_moments:
+        alpha_save = alpha.copy()
+        alpha = 2 * H @ alpha - alpha_prev
+        alpha_prev = alpha_save
+        yield alpha
+        n += 1
+
+def OPDM_KPM(state, num_moments, H, Ef=0, bounds=None):
+    """
+    Input:
+    state -> np.ndarray: state to which we apply the kpm expansion
+    num_moments -> int: number of moments to use in the KPM expansion
+    H -> np.ndarray: Hamiltonian
+    Ef -> float: Fermi energy at which to calculate the filled band projector (OPDM)
+    bounds -> tuple of floats: Bounds for the spectrum, estimated if not provided
+
+    Output:
+    P_vec -> np.ndarray: OPDM applied onto the input state
+    """
+
+    # Rescaling of H and energies for the Kernel Polynomial Expansion
+    num_moments = num_moments
+    H_rescaled, (a, b) = kwant.kpm._rescale(H, 0.05, None, bounds)
+    phi_f = np.arccos((Ef - b) / a)
+
+    # Calculation of the coefficients in the expansion using the Jackson Kernel
+    g = jackson_kernel(np.ones(num_moments))
+    g[0] = 0
+    m = np.arange(num_moments)
+    m[0] = 1
+    coefs = -2 * g * (np.sin(m * phi_f) / (m * np.pi))
+
+    # Calculation of the OPDM (projector) applied onto vector as described in PRR 2, 013229 (2020)
+    P_vec = (1 - phi_f/np.pi) * state + sum(c * vec for c, vec
+                             in zip(coefs, kpm_vector_generator(H_rescaled, state, num_moments)))
+    return P_vec
+
+def local_marker_KPM_bulk(syst, S, Nx, Ny, Ef=0., num_moments=1000, num_vecs=5, bounds=None, cutoff=0.2):
+    """
+    Input:
+    syst -> kwant.builder.Builder: Kwant closed system
+    S -> scipy.sparse.csr_matrix: Auxiliary operator
+    Nx, Ny -> int: Number of sites in each direction
+    Ef -> float: Fermi energy at which to calculate the OPDM
+    num_moments -> int: number of moments to use on the KPM expansion
+    num_vecs -> int: number of random vectors to use in the stochastic trace evaluation
+    bounds -> tuple of floats: Bounds for the spectrum, estimated if not provided
+    cutoff -> float: fraction of the system we average over, taking the origin at the centre
+
+    Output:
+    np.complex128: Average bulk marker
+    """
+
+    # Region where we calculate the local marker
+    project_to_region = partial(bulk_state, syst, lx=cutoff * Nx, ly=cutoff * Ny, Nx=Nx, Ny=Ny)
+
+    # Operators involved in the calculation of the local marker
+    H = syst.hamiltonian_submatrix(params=dict(flux=0., mu=0.), sparse=True).tocsr()
+    P = partial(OPDM_KPM, num_moments=num_moments, H=H, Ef=Ef, bounds=bounds)
+    [X, Y] = position_operator_OBC(syst, Nx, Ny)[0]
+
+    # Calculation using the stochastic trace + KPM algorithm
+    M = 0.
+    for i in range(num_vecs):
+
+        # Random initial state supported in the region that we trace over
+        loger_kwant.info(f'Random vector {i}/ {num_vecs - 1}')
+        state, Nsites = project_to_region(state=np.exp(2j * np.pi * np.random.random((H.shape[0]))))
+
+        # Calculation of the invariant
+        P_psi = P(state)
+        if spin_mixing:
+            I = np.eye(rho.shape[0], dtype=np.complex128)
+            Q = I - 2 * rho
+            Qp = 2 * (Q + S @ Q @ S)
+            vals, vecs = eigh(Qp)
+            if np.min(np.abs(vals)) < 1e-8:
+                loger_kwant.warning('Qp has near-zero eigenvalues; marker may be ill-defined')
+            Qp = vecs @ np.diag(np.sign(vals)) @ vecs.T.conj()
+            rho = (I - Qp) / 2
+        else:
+            pass
+
+        M = PS @ XPS @ YPS - PS @ YPS @ XPS
+
+        P_psi = P(state)
+        SP
+        SP_psi = S @ P_psi
+        PXP_psi, PYP_psi, PZP_psi = P(X @ P_psi),  P(Y @ P_psi),  P(Z @ P_psi)
+        PXSP_psi, PYSP_psi, PZSP_psi = P(X @ SP_psi), P(Y @ SP_psi),  P(Z @ SP_psi)
+        M +=  (Y @ PXSP_psi).T.conj() @ PZP_psi + (X @ PZSP_psi).T.conj() @ PYP_psi + (Z @ PYSP_psi).T.conj() @ PXP_psi
+        M += -(Z @ PXSP_psi).T.conj() @ PYP_psi - (Y @ PZSP_psi).T.conj() @ PXP_psi - (X @ PYSP_psi).T.conj() @ PZP_psi
+
+    return (8 * pi / 3) * np.imag(M) / (num_vecs * Nsites)
+
+def bulk_state(syst, lx, ly, Nx, Ny, state):
+    """
+    Input:
+    syst -> kwant.builder.Builder: Kwant closed system (no leads) for the nanowire
+    lx, ly -> float: cutoff distances delimiting the bulk
+    Nx, Ny -> int: Number of sites in each direction
+    state -> np.ndarray: state to be restricted to the bulk sites
+
+    Output:
+    state -> np.ndarray: state with only support in the bulk sites
+    Nsites -> int: number sites in the considered bulk
+    """
+
+    # Selecting a region on the bulk
+    pos = np.array([s.pos for s in syst.sites])
+    x_pos, y_pos = pos[:, 0] - 0.5 * (Nx-1), pos[:, 1] - 0.5 * (Ny-1)
+    cond1 = np.abs(x_pos) < lx
+    cond2 = np.abs(y_pos) < ly
+    cond = cond1 * cond2
+    Nsites = len(cond[cond])
+    cond = np.repeat(cond, 4)
+
+    # Weighted state on the bulk region
+    state[~cond] = 0.
+    return state, Nsites
+
+def position_operator_OBC(syst, Nx, Ny):
+    """
+    Input:
+      syst -> kwant.builder.Builder: Kwant closed system
+      Nx, Ny -> int: Number of sites in each direction
+
+    Output:
+    operators -> list of np.ndarrays: Position operators
+    pos -> np.ndarray: position of the sites
+    """
+    operators = []
+    norbs = syst.sites[0].family.norbs
+    pos = np.array([s.pos for s in syst.sites])
+    for c in range(pos.shape[1]):
+        if c==0:
+            N = Nx
+        else:
+            N = Ny
+        operators.append(diags(np.repeat(pos[:, c] - 0.5 * (N - 1), norbs), format='csr'))
+    return operators, pos
