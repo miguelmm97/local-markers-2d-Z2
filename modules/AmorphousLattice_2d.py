@@ -7,6 +7,9 @@ from scipy.spatial import KDTree
 import matplotlib.pyplot as plt
 from scipy.integrate import quad
 
+# Kwant
+import kwant
+import tinyarray as ta
 
 # Managing classes
 from dataclasses import dataclass, field
@@ -46,9 +49,10 @@ loger_amorphous.addHandler(stream_handler)
 #%% Module
 
 # Functions for creating the lattice
-def gaussian_point_set_2D(x, y, width):
-    x = np.random.normal(x, width, len(x))
-    y = np.random.normal(y, width, len(y))
+def gaussian_point_set_2D(x, y, width, seed):
+    rng = np.random.default_rng(seed=seed)
+    x = rng.normal(x, width, len(x))
+    y = rng.normal(y, width, len(y))
     return x, y
 
 @dataclass
@@ -66,6 +70,7 @@ class AmorphousLattice_2d:
     coords: np.ndarray = None                       # Coordinates of the lattice sites
     K_onsite: float = None                          # Strength of the onsite disorder distribution
     onsite_disorder: np.ndarray = None              # Disorder array for only the onsite case
+    seed: int = None                                # Seed both for amorphicity and anderson disorder
 
     # Class fields that can only be set internally
     Nsites: int = field(init=False)                 # Number of sites in the cross-section
@@ -98,7 +103,7 @@ class AmorphousLattice_2d:
             if crystalline:
                 self.x, self.y = x_crystal, y_crystal
             else:
-                self.x, self.y = gaussian_point_set_2D(x_crystal, y_crystal, self.w)
+                self.x, self.y = gaussian_point_set_2D(x_crystal, y_crystal, self.w, seed=self.seed)
         self.coords = np.array([self.x, self.y])
 
         # Set up preliminary disorder
@@ -107,7 +112,8 @@ class AmorphousLattice_2d:
     def generate_onsite_disorder(self, K_onsite):
         loger_amorphous.trace('Generating disorder configuration...')
         self.K_onsite = K_onsite
-        self.onsite_disorder = np.random.uniform(-self.K_onsite, self.K_onsite, self.Nsites)
+        rng = np.random.default_rng(seed=self.seed)
+        self.onsite_disorder = rng.uniform(-self.K_onsite, self.K_onsite, self.Nsites)
 
     # Setters and erasers
     def set_configuration(self, x, y):
@@ -135,3 +141,30 @@ class AmorphousLattice_2d:
                         alpha=alpha_link, linewidth=1)
                 # ax.text(self.x[n] + 0.1, self.y[n] + 0.1, str(n))
 
+@dataclass
+class AmorphousLattice_2d_Kwant(kwant.builder.SiteFamily):
+    def __init__(self, norbs, lattice, name=None):
+
+        if norbs is not None:
+            if int(norbs) != norbs or norbs <= 0:
+                raise ValueError("The norbs parameter must be an integer > 0.")
+            norbs = int(norbs)
+
+        # Class fields
+        loger_amorphous.trace('Initialising cross section as a SiteFamily...')
+        self.norbs = norbs
+        self.coords = np.array([lattice.x, lattice.y]).T
+        self.Nsites = lattice.Nsites
+        self.Nx = lattice.Nx
+        self.Ny = lattice.Ny
+        self.name = name
+        self.canonical_repr = "1" if name is None else name
+
+    def pos(self, tag):
+        return self.coords[tag, :][0, :]
+
+    def normalize_tag(self, tag):
+        return ta.array(tag)
+
+    def __hash__(self):
+        return 1
