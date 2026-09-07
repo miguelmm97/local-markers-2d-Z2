@@ -17,35 +17,11 @@ from kwant.kpm import jackson_kernel
 
 # Managing logging
 import logging
-import colorlog
-from colorlog import ColoredFormatter
 
 # Classes
 from modules.AmorphousLattice_2d import AmorphousLattice_2d_Kwant
 
-# %% Logging setup
-loger_kwant = logging.getLogger('kwant')
-loger_kwant.setLevel(logging.DEBUG)
-
-stream_handler = colorlog.StreamHandler()
-formatter = ColoredFormatter(
-    '%(black)s%(asctime) -5s| %(blue)s%(name) -10s %(black)s| %(cyan)s %(funcName) '
-    '-40s %(black)s|''%(log_color)s%(levelname) -10s | %(message)s',
-    datefmt=None,
-    reset=True,
-    log_colors={
-        'TRACE': 'black',
-        'DEBUG': 'purple',
-        'INFO': 'green',
-        'WARNING': 'yellow',
-        'ERROR': 'red',
-        'CRITICAL': 'red,bg_white',
-    },
-    secondary_log_colors={},
-    style='%'
-)
-stream_handler.setFormatter(formatter)
-loger_kwant.addHandler(stream_handler)
+loger_kwant = logging.getLogger(__name__)
 
 # %% Module
 

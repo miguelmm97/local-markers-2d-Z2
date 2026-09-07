@@ -8,8 +8,6 @@ import kwant
 
 # Logging
 import logging
-import colorlog
-from colorlog import ColoredFormatter
 
 # Plotting
 import matplotlib.pyplot as plt
@@ -33,36 +31,15 @@ from modules.OPDM import OPDM, spectrum
 from modules.marker import local_marker, bulk_avg_marker
 from modules.S_optimisation import rashba_bhz_S_tilde
 from modules.colorbar_marker import get_continuous_cmap
+from modules.logging_config import setup_logging
 
 #%%
 # ============================================================
 # Logging setup
 # ============================================================
 
-loger_main = logging.getLogger('main')
-loger_main.setLevel(logging.INFO)
-
-stream_handler = colorlog.StreamHandler()
-formatter = ColoredFormatter(
-    '%(white)s%(asctime) -5s| %(blue)s%(name) -10s %(black)s| %(cyan)s %(funcName) '
-    '-40s %(black)s|''%(log_color)s%(levelname) -10s | %(message)s',
-    datefmt=None,
-    reset=True,
-    log_colors={
-        'TRACE': 'white',
-        'DEBUG': 'purple',
-        'INFO': 'green',
-        'WARNING': 'yellow',
-        'ERROR': 'red',
-        'CRITICAL': 'red,bg_white',
-    },
-    secondary_log_colors={},
-    style='%'
-)
-
-stream_handler.setFormatter(formatter)
-if not loger_main.handlers:
-    loger_main.addHandler(stream_handler)
+setup_logging()
+loger_main = logging.getLogger(__name__)
 
 #%%
 # ============================================================
@@ -70,18 +47,18 @@ if not loger_main.handlers:
 # ============================================================
 
 M                 = -2.
-W                 = 3.
+W                 = 0.
 A                 = 1.
-lambR             = 2.
+lambR             = 1.
 width             = 0.1
 r                 = 1.3
-Nx                = 10
-Ny                = 10
+Nx                = 16
+Ny                = 16
 Nsites            = Nx * Ny
 cutoff_bulk_x     = 0.15
 cutoff_bulk_y     = 0.15
 params_dict = {'M': M, 'W': W, 'A': A, 'lambR': lambR}
-crystalline = True
+crystalline = False
 dim_Hext = Nx * Ny
 dim_Hint = 4
 dim_Hsp  = dim_Hint * dim_Hext
@@ -105,6 +82,7 @@ tau_0, tau_x, tau_y, tau_z = sigma_0, sigma_x, sigma_y, sigma_z
 loger_main.info('Generating site structure: ...')
 lattice = AmorphousLattice_2d(Nx=Nx, Ny=Ny, w=width, r=r)
 lattice.seed = seed
+lattice.boundary = 'Closed'
 lattice.build_lattice(crystalline=crystalline)
 lattice.generate_onsite_disorder(K_onsite=0.5 * W)
 loger_main.info('Generating site structure: Done')
@@ -250,7 +228,7 @@ ax1.tick_params(which='major', length=6, labelsize=fontsize, color='black')
 ax1.set(xticks=[0, len(eps)])
 ax1.text(
     0.05, 0.95,
-    f'$L_x={Nx}$, $L_y={Ny}$\n$M={M}$\n$A={A}$\n$\\lambda_R={lambR}$',
+    f'$L_x={Nx}$, $L_y={Ny}$\n$M={M}$\n$A={A}$\n$\\lambda_R={lambR}$\n$W={W}$\n$w={width}$',
     transform=ax1.transAxes, fontsize=8, va='top', ha='left'
 )
 

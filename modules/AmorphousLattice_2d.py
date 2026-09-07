@@ -19,32 +19,8 @@ import time
 
 # Managing logging
 import logging
-import colorlog
-from colorlog import ColoredFormatter
 
-#%% Logging setup
-loger_amorphous = logging.getLogger('amorphous')
-loger_amorphous.setLevel(logging.INFO)
-
-stream_handler = colorlog.StreamHandler()
-formatter = ColoredFormatter(
-    '%(black)s%(asctime) -5s| %(blue)s%(name) -10s %(black)s| %(cyan)s %(funcName) '
-    '-40s %(black)s|''%(log_color)s%(levelname) -10s | %(message)s',
-    datefmt=None,
-    reset=True,
-    log_colors={
-        'TRACE': 'black',
-        'DEBUG': 'purple',
-        'INFO': 'green',
-        'WARNING': 'yellow',
-        'ERROR': 'red',
-        'CRITICAL': 'red,bg_white',
-    },
-    secondary_log_colors={},
-    style='%'
-)
-stream_handler.setFormatter(formatter)
-loger_amorphous.addHandler(stream_handler)
+loger_amorphous = logging.getLogger(__name__)
 
 #%% Module
 
@@ -71,6 +47,7 @@ class AmorphousLattice_2d:
     K_onsite: float = None                          # Strength of the onsite disorder distribution
     onsite_disorder: np.ndarray = None              # Disorder array for only the onsite case
     seed: int = None                                # Seed both for amorphicity and anderson disorder
+    boundary: str = 'Open'                          # 'Open' or 'Closed' boundary conditions
 
     # Class fields that can only be set internally
     Nsites: int = field(init=False)                 # Number of sites in the cross-section
@@ -87,7 +64,19 @@ class AmorphousLattice_2d:
         self.generate_neighbour_tree()
 
     def generate_neighbour_tree(self):
-        self.neighbours = KDTree(self.coords.T).query_ball_point(self.coords.T, self.r)
+        if self.boundary == 'Closed':
+            if self.r >= min(self.Nx, self.Ny) / 2:
+                loger_amorphous.warning(
+                    f'Neighbour cutoff r={self.r} must stay under half the system size '
+                    f'(min(Nx, Ny) / 2 = {min(self.Nx, self.Ny) / 2}) for periodic boundary '
+                    f'conditions to be unambiguous.'
+                )
+
+            coords_wrapped = np.mod(self.coords.T, [self.Nx, self.Ny])
+            self.neighbours = KDTree(coords_wrapped, boxsize=[self.Nx, self.Ny]).query_ball_point(
+                coords_wrapped, self.r)
+        else:
+            self.neighbours = KDTree(self.coords.T).query_ball_point(self.coords.T, self.r)
         for i in range(self.Nsites):
             self.neighbours[i].remove(i)
 

@@ -17,35 +17,11 @@ from kwant.kpm import jackson_kernel
 
 # Managing logging
 import logging
-import colorlog
-from colorlog import ColoredFormatter
 
 # Classes
 from modules.AmorphousLattice_2d import AmorphousLattice_2d_Kwant
 
-# %% Logging setup
-loger_kwant = logging.getLogger('kwant')
-loger_kwant.setLevel(logging.DEBUG)
-
-stream_handler = colorlog.StreamHandler()
-formatter = ColoredFormatter(
-    '%(black)s%(asctime) -5s| %(blue)s%(name) -10s %(black)s| %(cyan)s %(funcName) '
-    '-40s %(black)s|''%(log_color)s%(levelname) -10s | %(message)s',
-    datefmt=None,
-    reset=True,
-    log_colors={
-        'TRACE': 'black',
-        'DEBUG': 'purple',
-        'INFO': 'green',
-        'WARNING': 'yellow',
-        'ERROR': 'red',
-        'CRITICAL': 'red,bg_white',
-    },
-    secondary_log_colors={},
-    style='%'
-)
-stream_handler.setFormatter(formatter)
-loger_kwant.addHandler(stream_handler)
+loger_kwant = logging.getLogger(__name__)
 
 #%% Pauli matrices
 
@@ -58,13 +34,23 @@ tau_0, tau_x, tau_y, tau_z = sigma_0, sigma_x, sigma_y, sigma_z
 
 #%% Rashba-type SOC Hamiltonian
 
-def displacement2D_kwant(site0, site1):
+def displacement2D_kwant(site0, site1, boundary='Open', Nx=None, Ny=None):
     x1, y1 = site0.pos[0], site0.pos[1]
     x2, y2 = site1.pos[0], site1.pos[1]
 
     v = np.zeros((2,))
-    v[0] = (x2 - x1)
-    v[1] = (y2 - y1)
+    if boundary == "Closed":
+        # Wrap both endpoints into the fundamental domain [0, Nx) x [0, Ny) first, so the
+        # minimum-image convention below is well-defined even for amorphous sites whose
+        # Gaussian jitter pushed them just outside it
+        x1, x2 = x1 % Nx, x2 % Nx
+        y1, y2 = y1 % Ny, y2 % Ny
+        v[0] = (x2 - x1) - Nx * np.sign(x2 - x1) * np.heaviside(abs(x2 - x1) - Nx / 2, 0)
+        v[1] = (y2 - y1) - Ny * np.sign(y2 - y1) * np.heaviside(abs(y2 - y1) - Ny / 2, 0)
+
+    elif boundary == "Open":
+        v[0] = (x2 - x1)
+        v[1] = (y2 - y1)
 
     # Norm of the vector between sites 2 and 1
     r = np.sqrt(v[0] ** 2 + v[1] ** 2)
@@ -123,7 +109,8 @@ def rashba_syst_Kwant(lattice_tree, param_dict):
 
     # Hopping
     def hopp(site1, site0):
-        d, phi = displacement2D_kwant(site1, site0)
+        d, phi = displacement2D_kwant(site1, site0, boundary=lattice_tree.boundary,
+                                       Nx=lattice_tree.Nx, Ny=lattice_tree.Ny)
         return hopping(A, lambR, d, phi, lattice_tree.r)
 
     # Initialise kwant system

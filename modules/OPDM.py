@@ -17,32 +17,8 @@ from kwant.kpm import jackson_kernel
 
 # Managing logging
 import logging
-import colorlog
-from colorlog import ColoredFormatter
 
-# %% Logging setup
-loger_opdm = logging.getLogger('opdm')
-loger_opdm.setLevel(logging.DEBUG)
-
-stream_handler = colorlog.StreamHandler()
-formatter = ColoredFormatter(
-    '%(black)s%(asctime) -5s| %(blue)s%(name) -10s %(black)s| %(cyan)s %(funcName) '
-    '-40s %(black)s|''%(log_color)s%(levelname) -10s | %(message)s',
-    datefmt=None,
-    reset=True,
-    log_colors={
-        'TRACE': 'black',
-        'DEBUG': 'purple',
-        'INFO': 'green',
-        'WARNING': 'yellow',
-        'ERROR': 'red',
-        'CRITICAL': 'red,bg_white',
-    },
-    secondary_log_colors={},
-    style='%'
-)
-stream_handler.setFormatter(formatter)
-loger_opdm.addHandler(stream_handler)
+loger_opdm = logging.getLogger(__name__)
 
 
 #%% OPDM and density
@@ -73,7 +49,6 @@ def spectrum(H, Nsp=None):
     P = U @ np.conj(np.transpose(U))
 
     return energy, eigenstates, P
-
 
 def OPDM(eigenvectors, filling=0.5):
     loger_opdm.info('Calculating OPDM...')

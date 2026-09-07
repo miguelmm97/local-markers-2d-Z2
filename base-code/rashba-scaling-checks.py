@@ -8,8 +8,6 @@ import kwant
 
 # Logging
 import logging
-import colorlog
-from colorlog import ColoredFormatter
 
 # Plotting
 import matplotlib.pyplot as plt
@@ -33,36 +31,15 @@ from modules.OPDM import OPDM, spectrum
 from modules.marker import local_marker, bulk_avg_marker
 from modules.S_optimisation import rashba_bhz_S_tilde
 from modules.colorbar_marker import get_continuous_cmap
+from modules.logging_config import setup_logging
 
 #%%
 # ============================================================
 # Logging setup
 # ============================================================
 
-loger_main = logging.getLogger('main')
-loger_main.setLevel(logging.INFO)
-
-stream_handler = colorlog.StreamHandler()
-formatter = ColoredFormatter(
-    '%(white)s%(asctime) -5s| %(blue)s%(name) -10s %(black)s| %(cyan)s %(funcName) '
-    '-40s %(black)s|''%(log_color)s%(levelname) -10s | %(message)s',
-    datefmt=None,
-    reset=True,
-    log_colors={
-        'TRACE': 'white',
-        'DEBUG': 'purple',
-        'INFO': 'green',
-        'WARNING': 'yellow',
-        'ERROR': 'red',
-        'CRITICAL': 'red,bg_white',
-    },
-    secondary_log_colors={},
-    style='%'
-)
-
-stream_handler.setFormatter(formatter)
-if not loger_main.handlers:
-    loger_main.addHandler(stream_handler)
+setup_logging()
+loger_main = logging.getLogger(__name__)
 
 #%%
 # ============================================================
