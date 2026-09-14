@@ -26,7 +26,7 @@ from matplotlib.patches import Rectangle
 # Modules
 from modules.functions import *
 from modules.AmorphousLattice_2d import AmorphousLattice_2d
-from modules.amorphous_rashba import rashba_syst_Kwant
+from modules.SO_rashba_dressel_Ham import SO_syst_Kwant
 from modules.OPDM import OPDM, spectrum
 from modules.marker import local_marker, bulk_avg_marker
 from modules.S_optimisation import rashba_bhz_S_tilde
@@ -50,6 +50,7 @@ M                 = -2.
 W                 = 0.
 A                 = 1.
 lambR             = 1.
+lambD             = 0.
 width             = 0.1
 r                 = 1.3
 Nx                = 16
@@ -57,8 +58,7 @@ Ny                = 16
 Nsites            = Nx * Ny
 cutoff_bulk_x     = 0.15
 cutoff_bulk_y     = 0.15
-params_dict = {'M': M, 'W': W, 'A': A, 'lambR': lambR}
-crystalline = False
+params_dict = {'M': M, 'W': W, 'A': A, 'lambR': lambR, 'lambD': lambD}
 dim_Hext = Nx * Ny
 dim_Hint = 4
 dim_Hsp  = dim_Hint * dim_Hext
@@ -83,12 +83,12 @@ loger_main.info('Generating site structure: ...')
 lattice = AmorphousLattice_2d(Nx=Nx, Ny=Ny, w=width, r=r)
 lattice.seed = seed
 lattice.boundary = 'Closed'
-lattice.build_lattice(crystalline=crystalline)
+lattice.build_lattice()
 lattice.generate_onsite_disorder(K_onsite=0.5 * W)
 loger_main.info('Generating site structure: Done')
 
 loger_main.info('Defining Hamiltonian of the system in Kwant: ...')
-rashba_model = rashba_syst_Kwant(lattice, params_dict).finalized()
+rashba_model = SO_syst_Kwant(lattice, params_dict).finalized()
 site_pos = np.array([site.pos for site in rashba_model.id_by_site])
 loger_main.info('Defining Hamiltonian of the system in Kwant: Done')
 

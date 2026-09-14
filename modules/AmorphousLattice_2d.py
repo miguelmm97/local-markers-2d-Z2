@@ -57,9 +57,8 @@ class AmorphousLattice_2d:
 
     # Methods for building the lattice
     def build_lattice(self, crystalline=False):
-        if self.w < 1e-10 and not crystalline:
-            loger_amorphous.error('The amorphicity cannot be strictly 0')
-            exit()
+        if self.w < 1e-10:
+            crystalline = True
         self.generate_configuration(crystalline=crystalline)
         self.generate_neighbour_tree()
 

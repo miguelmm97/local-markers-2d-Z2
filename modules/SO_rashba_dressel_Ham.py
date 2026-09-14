@@ -69,7 +69,7 @@ def displacement2D_kwant(site0, site1, boundary='Open', Nx=None, Ny=None):
 
     return r, phi
 
-def hopping(A, lambR, d, phi, cutoff_dist):
+def hopping(A, lambR, lambD, d, phi, cutoff_dist):
 
     # radial factor
     f_cutoff = np.heaviside(cutoff_dist - d, 1) * np.exp(-d + 1)
@@ -77,15 +77,17 @@ def hopping(A, lambR, d, phi, cutoff_dist):
     # inter-orbital hopping
     hopp_orb = A * np.kron(tau_z, sigma_0)
 
-    # spin-orbit + rashba
-    s_par = np.cos(phi) * sigma_x + np.sin(phi) * sigma_y
-    s_perp = np.sin(phi) * sigma_x - np.cos(phi) * sigma_y
-    hopp_SOC = - 1j * A * np.kron(tau_x, s_par)
-    hopp_rashba = -1j * lambR * np.kron(tau_0, s_perp)
+    # spin-orbit + rashba + dresselhaus
+    delta_s = np.cos(phi) * sigma_x + np.sin(phi) * sigma_y
+    eta_s = np.sin(phi) * sigma_x - np.cos(phi) * sigma_y
+    gamma_s = np.cos(phi) * sigma_x - np.sin(phi) * sigma_y
+    hopp_SOC         = - 1j * A * np.kron(tau_x, delta_s)
+    hopp_rashba      = -1j * lambR * np.kron(tau_0, eta_s)
+    hopp_dresselhaus = -1j * lambD * np.kron(tau_0, gamma_s)
 
-    return f_cutoff * (hopp_orb + hopp_SOC + hopp_rashba)
+    return f_cutoff * (hopp_orb + hopp_SOC + hopp_rashba + hopp_dresselhaus)
 
-def rashba_syst_Kwant(lattice_tree, param_dict):
+def SO_syst_Kwant(lattice_tree, param_dict):
 
     # Load parameters into the builder namespace
     try:
@@ -93,6 +95,7 @@ def rashba_syst_Kwant(lattice_tree, param_dict):
         W = param_dict['W']
         A = param_dict['A']
         lambR = param_dict['lambR']
+        lambD = param_dict['lambD']
     except KeyError as err:
         raise KeyError(f'Parameter error: {err}')
 
@@ -111,7 +114,7 @@ def rashba_syst_Kwant(lattice_tree, param_dict):
     def hopp(site1, site0):
         d, phi = displacement2D_kwant(site1, site0, boundary=lattice_tree.boundary,
                                        Nx=lattice_tree.Nx, Ny=lattice_tree.Ny)
-        return hopping(A, lambR, d, phi, lattice_tree.r)
+        return hopping(A, lambR, lambD, d, phi, lattice_tree.r)
 
     # Initialise kwant system
     loger_kwant.trace('Creating kwant scattering region...')

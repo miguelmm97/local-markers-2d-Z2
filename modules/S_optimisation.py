@@ -32,7 +32,7 @@ tau_0, tau_x, tau_y, tau_z = sigma_0, sigma_x, sigma_y, sigma_z
 
 #%% Auxiliary "spin" operator for the Rashba-BHZ model
 
-def rashba_bhz_S_tilde(rho, theta, dim_Hext):
+def S_tilde_one_parameter(rho, theta, dim_Hext):
     """
     Input:
     rho -> np.ndarray: One particle density matrix (projector onto the filled bands)

@@ -46,7 +46,6 @@ Nsites            = Nx * Ny
 cutoff_bulk_x     = 0.25
 cutoff_bulk_y     = 0.25
 params_dict = {'m': m, 't': t, 'lamb': lamb}
-crystalline = False
 dim_Hext = Nx * Ny
 dim_Hint = 4
 dim_Hsp  = dim_Hint * dim_Hext
@@ -66,7 +65,7 @@ tau_0, tau_x, tau_y, tau_z = sigma_0, sigma_x, sigma_y, sigma_z
 # Lattice and BHZ Hamiltonian
 loger_main.info('Generating site structure: ...')
 lattice = AmorphousLattice_2d(Nx=Nx, Ny=Ny, w=width, r=r)
-lattice.build_lattice(crystalline=crystalline)
+lattice.build_lattice()
 loger_main.info('Generating site structure: Done')
 loger_main.info('Defining Hamiltonian of the BHZ model in Kwant: ...')
 bhz_model = BHZ_Hamiltonian_Kwant(lattice, params_dict).finalized()

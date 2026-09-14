@@ -24,7 +24,7 @@ from pathlib import Path
 # Modules
 from modules.functions import *
 from modules.AmorphousLattice_2d import AmorphousLattice_2d
-from modules.amorphous_rashba import rashba_syst_Kwant
+from modules.SO_rashba_dressel_Ham import SO_syst_Kwant
 from modules.OPDM import spectrum, local_DoS
 from modules.S_optimisation import rashba_bhz_S_tilde
 from modules.logging_config import setup_logging
@@ -92,12 +92,12 @@ M                 = -2.
 W                 = 0.
 A                 = 1.
 lambR             = 2
-width             = 0.1
+lambD             = 0
+width             = 0.
 r                 = 1.3
 Nx                = 8
 Ny                = 8
-crystalline       = True
-params_dict = {'M': M, 'W': W, 'A': A, 'lambR': lambR}
+params_dict = {'M': M, 'W': W, 'A': A, 'lambR': lambR, 'lambD': lambD}
 dim_Hext = Nx * Ny
 dim_Hint = 4
 seed     = 12345
@@ -124,9 +124,9 @@ theta_opt = julia_notes.theta_optimal(lambR, A=A)
 loger_main.info('Building OBC lattice with kwant: ...')
 lattice = AmorphousLattice_2d(Nx=Nx, Ny=Ny, w=width, r=r)
 lattice.seed = seed
-lattice.build_lattice(crystalline=crystalline)
+lattice.build_lattice()
 lattice.generate_onsite_disorder(K_onsite=0.5 * W)
-rashba_model = rashba_syst_Kwant(lattice, params_dict).finalized()
+rashba_model = SO_syst_Kwant(lattice, params_dict).finalized()
 site_pos = np.array([site.pos for site in rashba_model.id_by_site])
 H = rashba_model.hamiltonian_submatrix()
 eps, eigenvectors, rho = spectrum(H)
@@ -151,9 +151,9 @@ loger_main.info('Building PBC lattice with kwant: ...')
 lattice_pbc_kwant = AmorphousLattice_2d(Nx=Nx, Ny=Ny, w=width, r=r)
 lattice_pbc_kwant.seed = seed
 lattice_pbc_kwant.boundary = 'Closed'
-lattice_pbc_kwant.build_lattice(crystalline=crystalline)
+lattice_pbc_kwant.build_lattice()
 lattice_pbc_kwant.generate_onsite_disorder(K_onsite=0.5 * W)
-rashba_model_pbc_kwant = rashba_syst_Kwant(lattice_pbc_kwant, params_dict).finalized()
+rashba_model_pbc_kwant = SO_syst_Kwant(lattice_pbc_kwant, params_dict).finalized()
 H_pbc_kwant = rashba_model_pbc_kwant.hamiltonian_submatrix()
 _, _, rho_pbc_kwant = spectrum(H_pbc_kwant)
 loger_main.info('Building PBC lattice with kwant: Done')
@@ -247,9 +247,9 @@ for i, N in enumerate(Nx_scan):
     # OBC kwant at this size
     lattice_N = AmorphousLattice_2d(Nx=N, Ny=N, w=width, r=r)
     lattice_N.seed = seed
-    lattice_N.build_lattice(crystalline=crystalline)
+    lattice_N.build_lattice()
     lattice_N.generate_onsite_disorder(K_onsite=0.5 * W)
-    model_N = rashba_syst_Kwant(lattice_N, params_dict).finalized()
+    model_N = SO_syst_Kwant(lattice_N, params_dict).finalized()
     _, _, rho_N = spectrum(model_N.hamiltonian_submatrix())
     gap_OBC_kwant_N = np.array([rashba_bhz_S_tilde(rho_N, theta, N * N)[1] for theta in theta_vec_scan])
     theta_OBC_kwant_scan[i] = theta_vec_scan[np.argmax(gap_OBC_kwant_N)]
