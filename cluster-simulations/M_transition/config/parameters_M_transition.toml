@@ -1,0 +1,36 @@
+# Parameters for simulating the M transition
+
+# Common parameters for each job
+A        = 1.0
+width    = 0.1
+r        = 1.3
+seed     = 12345
+lambR    = 1.0
+lambD    = 0.5
+W        = 0.25
+M0       = 2.0
+Mf       = 4.5
+NM       = 50
+
+# The M grid is not uniform: dense_fraction of the NM points are placed inside the window
+# [Mc0, Mc1], where the transition sits, and the rest are shared between the two outer
+# stretches in proportion to their width. Set dense_fraction so that it matches the width
+# ratio if a uniform grid is wanted instead
+Mc0            = 2.5
+Mc1            = 3.5
+dense_fraction = 0.7
+
+# Choice of the "spin" operator angle.
+#   optimize_theta = false -> every point uses the analytical clean-lattice angle theta_k
+#   optimize_theta = true  -> at every point the gap is evaluated at Ntheta angles evenly
+#                             spaced on [0, theta_k] and the widest one is kept.
+#                             Ntheta = 2 gives {0, theta_k}, Ntheta = 3 gives
+#                             {0, theta_k/2, theta_k}, and so on. Must be at least 2.
+# Each extra candidate costs about 0.4 of a full diagonalisation, so the runtime scales
+# roughly as (2 + 0.39 * Ntheta) / 2 relative to the unoptimised scan
+optimize_theta = true
+Ntheta         = 3
+
+# Different jobs
+Nsamples = 20
+size_vec = [10, 20, 30, 40, 50]
