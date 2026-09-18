@@ -1,0 +1,81 @@
+#!/bin/bash
+
+# Run this file on the command line with:
+#       sbatch submit_slurm
+
+
+# There are two main ways to run batch jobs
+#       A) using 'job arrays', a mechanism built into Slurm for multi-node batch jobs
+#       B) using 'GNU parallel', a separate tool for single-node batch jobs
+# In this example we consider option 1), where we can work through a large batch
+# of similar jobs with a single sbatch submission.
+
+
+##################################################################################################
+#                                Should I choose A) or B)?                                       #
+##################################################################################################
+#       A) Job arrays
+#               - Good when you have hundreds of medium-long jobs (~10 min-6 hours each)
+#               - Support for inter-job dependencies (don't start job2 before job1 has ended, etc).
+#               - Trickier to control hyperthreading. Try flags such as --ntasks-per-core=1 (or 2)
+#                 or --cpus-per-task=1 (or 2)
+#               - Good when it doesn't matter which node does the work. Nodes can be specified,
+#                 but if not, then any available resource on the cluster can take array jobs.
+#
+#
+#       B) GNU parallel
+#               - Good when you have many thousands of very short simulations (~1-60 seconds each)
+#               - Good when you want to use hyperthreading or have more fine-grained control
+#               - over OpenMP execution.
+#               - Works in a single node, using all of its nodes until the batch is completed
+#
+##################################################################################################
+
+
+# Lines starting with '#SBATCH' are interpreted by sbatch
+# Note that double-dash flags can be given to sbatch from the command line, e.g. 'sbatch --nodes=1 ...'
+
+#SBATCH --job-name=W_transition_10   # Job name for this simulation, to display on the queue
+#SBATCH --time=1-00:00:00               # Maximum duration of each array task. Slurm kills the task after this time
+#SBATCH --nodes=1                       # Minimum number of nodes required for a single task (default 1)
+#SBATCH --ntasks=1                      # Number of tasks (simulations) in each array element (default 1)
+#SBATCH --cpus-per-task=8               # In this case each task (simulation) is single-threaded (default 1)
+#SBATCH --mem-per-cpu=1G                # Amount of RAM memory (in megabytes) required for each core
+
+#SBATCH --output=logs10/%x_%N_%a.o.txt    # Normal console output. Expands to example03A_<nodename>_<[1-512]>.o
+#SBATCH --error=logs10/%x_%N_%a.e.txt     # Error  console output. Expands to example03A_<nodename>_<[1-512]>.e
+#SBATCH --array=0-19                      # Range of array tasks, i.e. task 1, task 2, task 3, ...task 512
+
+
+
+# This line is run on the allocated resource
+export OMP_NUM_THREADS=8
+mkdir -p data-10
+python W_transition_cluster.py --line=$SLURM_ARRAY_TASK_ID -M="data-10" -f="jobs.txt"
+
+
+# Additional comments
+#
+# - The flag '--array=1-512' tells Slurm to perform 512 independent executions
+#   of the line './science.sh ...' while incrementing the variable '$SLURM_ARRAY_TASK_ID'.
+#
+# - As long as there are free cores on the cluster, Slurm will keep launching './science.sh ...'
+#   until all 512 tasks of the array have been executed.
+#
+# - In #SBATCH commands,
+#       - %a expands to the array task id, i.e. a number in 1 to 512.
+#       - %A expands to the job id, i.e. the job identifier seen in 'squeue'
+#       - %N expands to the name of the node on which that particular task is run
+#       - %x expands to the job name
+#
+# - The '--array=[]' flag admits further specifications.
+#   In general '--array=[min-max:step%maxsim]', where min-max is a range such as 1-512,
+#   step is the size of increments in the range and maxsim is the maximum number of concurrent
+#   tasks globally. For example '--array=0-16:2%4' will run through 0,2,4,6,8,10,12,14
+#   keeping a maxiumum of 4 processes running at any one time
+#
+# - Batch jobs are bound to whichever cluster has been assigned. Even if resources
+#   become available on the other cluster, a batch job is stuck with the nodes
+#   in its assigned cluster.
+#
+# - The directory for the log files must exist prior to job execution

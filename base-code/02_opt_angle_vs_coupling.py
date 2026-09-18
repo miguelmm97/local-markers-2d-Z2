@@ -19,8 +19,8 @@ from modules.functions import *
 from modules.AmorphousLattice_2d import AmorphousLattice_2d
 from modules.SO_rashba_dressel_Ham import SO_syst_Kwant
 from modules.OPDM import spectrum
-from modules.marker import local_marker, bulk_avg_marker
-from modules.S_optimisation import S_tilde_one_parameter
+from modules.marker import marker_per_site_speedup
+from modules.S_optimisation import get_S_tilde_and_gap, S_tilde_linear_basis, S_tilde_gap
 from modules.logging_config import setup_logging
 
 #%%
@@ -41,15 +41,13 @@ A                 = 1.
 width             = 0.1
 W                 = 0.25
 r                 = 1.3
-Nx                = 20
-Ny                = 20
-cutoff_bulk_x     = 0.15
-cutoff_bulk_y     = 0.15
+Nx                = 10
+Ny                = 10
 dim_Hext = Nx * Ny
 seed     = 12345
 
 # Rashba coupling scan
-lambR_vec = np.linspace(0., 2., 10)
+lambR_vec = np.linspace(0., 5., 10)
 lambD_vec = [0., 0.5, 1.]
 
 # Resolution of the numerical theta optimisation at each (lambR, lambD)
@@ -91,7 +89,6 @@ for id_D, lambD in enumerate(lambD_vec):
         # Model
         params_dict = {'M': M, 'W': W, 'A': A, 'lambR': lambR, 'lambD': lambD}
         model = SO_syst_Kwant(lattice, params_dict).finalized()
-        site_pos = np.array([site.pos for site in model.id_by_site])
         H = model.hamiltonian_submatrix()
         eps, _, rho = spectrum(H)
 
@@ -100,9 +97,10 @@ for id_D, lambD in enumerate(lambD_vec):
         gap_H_vec[id_D, id_R] = eps[Nsp] - eps[Nsp - 1]
 
         # Optimal numerical theta
+        S_tilde_0, S_tilde_1 = S_tilde_linear_basis(rho, dim_Hext)
         gap_theta = np.zeros(theta_vec.shape)
         for i, theta in enumerate(theta_vec):
-            _, gap_theta[i], _ = S_tilde_one_parameter(rho, theta, dim_Hext)
+            gap_theta[i] = S_tilde_gap(S_tilde_0, S_tilde_1, theta)
         theta_opt_vec[id_D, id_R] = theta_vec[np.argmax(gap_theta)]
 
         #  Optimal analytical theta (clean lattice)
@@ -111,18 +109,18 @@ for id_D, lambD in enumerate(lambD_vec):
         theta_opt_clean_vec[id_D, id_R] = 0.5 * (np.arctan(param1) + np.arctan(param2))
 
         # Marker and gap of S_tilde at the optimal angle
-        S_tilde_opt, gap_Stilde_opt_vec[id_D, id_R], _ = S_tilde_one_parameter(
+        S_tilde_opt, gap_Stilde_opt_vec[id_D, id_R], _ = get_S_tilde_and_gap(
             rho, theta_opt_vec[id_D, id_R], dim_Hext)
-        marker_per_site = local_marker(lattice.x, lattice.y, S_tilde_opt, Nx=Nx, Ny=Ny)
-        marker_opt_vec[id_D, id_R] = bulk_avg_marker(site_pos, marker_per_site, Nx, Ny,
-                                                       cutoff_x=cutoff_bulk_x, cutoff_y=cutoff_bulk_y)
+        marker_sites = marker_per_site_speedup(lattice.x, lattice.y, S_tilde_opt,
+                                               Nx=Nx, Ny=Ny, boundary=lattice.boundary)
+        marker_opt_vec[id_D, id_R] = marker_sites.mean()
 
         # Marker and gap of S_tilde at the clean analytical optimal angle
-        S_tilde_clean, gap_Stilde_opt_clean_vec[id_D, id_R], _ = S_tilde_one_parameter(
+        S_tilde_clean, gap_Stilde_opt_clean_vec[id_D, id_R], _ = get_S_tilde_and_gap(
             rho, theta_opt_clean_vec[id_D, id_R], dim_Hext)
-        marker_per_site_clean = local_marker(lattice.x, lattice.y, S_tilde_clean, Nx=Nx, Ny=Ny)
-        marker_opt_clean_vec[id_D, id_R] = bulk_avg_marker(site_pos, marker_per_site_clean, Nx, Ny,
-                                                             cutoff_x=cutoff_bulk_x, cutoff_y=cutoff_bulk_y)
+        marker_sites_clean = marker_per_site_speedup(lattice.x, lattice.y, S_tilde_clean,
+                                                     Nx=Nx, Ny=Ny, boundary=lattice.boundary)
+        marker_opt_clean_vec[id_D, id_R] = marker_sites_clean.mean()
 
 #%%
 # ============================================================
