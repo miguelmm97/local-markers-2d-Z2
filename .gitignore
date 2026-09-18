@@ -14,6 +14,7 @@ submit_all.sh
 # Simulation output
 data-*/
 logs-*/
+runs/
 *.h5
 *.txt
 

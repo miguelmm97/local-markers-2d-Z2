@@ -1,18 +1,36 @@
 """
-Write one Slurm submit file per system size, plus a submit_all.sh driver.
+Create a self-contained run directory under runs/ and fill it with everything needed to
+reproduce and submit one batch:
 
-Each size gets its own job name, log directory, data directory and --array range, so all
-the samples of one size land in the same place. The array ranges are derived from the same
-config that generate_jobs.py uses, so the line numbers always agree with jobs.txt.
+    runs/<timestamp>[_<tag>]/
+        parameters_M_transition.toml   snapshot of the config this run was generated from
+        jobs.txt                       snapshot of the job list the array indices refer to
+        submit_10 ... submit_50        one per system size
+        submit_all.sh                  sbatch driver
+        data/data-10 ...               one data directory per size
+        logs/logs-10 ...               one log directory per size
 
-Run generate_jobs.py first, then this, then ./submit_all.sh
+Nothing outside the run directory is written to, so later edits to config/ or jobs.txt
+cannot change what a finished run means.
+
+Usage:
+    python generate_jobs.py
+    python generate_submits.py [--tag some_label]
+    runs/<timestamp>/submit_all.sh
 """
 
-import math
+import argparse
+import shutil
 import stat
+from datetime import datetime
 from pathlib import Path
 
 import config
+
+parser = argparse.ArgumentParser(description='Create a run directory for one batch')
+parser.add_argument('--tag', type=str, default=None,
+                    help='Optional label appended to the run directory name')
+args = parser.parse_args()
 
 parameters = config.parameters_M_transition
 here = Path(__file__).resolve().parent
@@ -83,6 +101,8 @@ TEMPLATE = """#!/bin/bash
 #SBATCH --cpus-per-task={cpus}
 #SBATCH --mem={mem_gb}G
 
+# Everything below resolves inside the run directory, so this submits correctly from anywhere
+#SBATCH --chdir={run_dir}
 #SBATCH --output={log_dir}/%x_%N_%a.o.txt
 #SBATCH --error={log_dir}/%x_%N_%a.e.txt
 #SBATCH --array={start}-{end}
@@ -98,13 +118,40 @@ export OMP_NUM_THREADS={cpus}
 export MKL_NUM_THREADS={cpus}
 export OPENBLAS_NUM_THREADS={cpus}
 
-python M_transition_cluster.py --line=$SLURM_ARRAY_TASK_ID -M="{data_dir}" -f="jobs.txt"
+python {script_path} --line=$SLURM_ARRAY_TASK_ID -M="{data_dir}" -f="jobs.txt"
 """
+
+# The run directory is created fresh and never reused, so a finished batch keeps the exact
+# config and job list it ran with. Two runs generated within the same minute get a counter
+# rather than colliding
+stamp = datetime.now().strftime('%Y-%m-%d_%H%M')
+run_name = f'{stamp}_{args.tag}' if args.tag else stamp
+run_dir = here / 'runs' / run_name
+suffix = 1
+while run_dir.exists():
+    run_dir = here / 'runs' / f'{run_name}_{suffix}'
+    suffix += 1
+run_dir.mkdir(parents=True)
+
+# The array indices point at line numbers in jobs.txt, so the run needs its own copy:
+# regenerating the list later with different sizes must not change what this run meant
+jobs_src = here / 'jobs.txt'
+if not jobs_src.exists():
+    raise FileNotFoundError(f'{jobs_src} not found -- run generate_jobs.py first')
+shutil.copy(jobs_src, run_dir / 'jobs.txt')
+shutil.copy(here / 'config' / 'parameters_M_transition.toml', run_dir)
+
+n_jobs = len(jobs_src.read_text().splitlines())
+if n_jobs != len(size_vec) * Nsamples:
+    raise ValueError(f'jobs.txt has {n_jobs} lines but the config asks for '
+                     f'{len(size_vec) * Nsamples} -- rerun generate_jobs.py')
 
 theta_note = (f'{Ntheta} candidates on [0, theta_k], costing {theta_cost_factor:.2f}x'
               if Ntheta > 1 else 'fixed at the analytical theta_k')
+script_path = here / 'M_transition_cluster.py'
 
 submit_names = []
+print(f'run directory: {run_dir}')
 print(f'optimize_theta={optimize_theta}, Ntheta={Ntheta} '
       f'-> runtime factor {theta_cost_factor:.2f}x\n')
 print(f'{"L":>4} {"lines":>12} {"mem":>7} {"walltime":>12} {"est/sample":>12} {"est peak":>10}')
@@ -126,32 +173,36 @@ for id_L, L in enumerate(size_vec):
         scan_human = f'{scan_seconds / 3600:.1f} h'
 
     job_name = f'M_transition_{L}'
-    log_dir = f'logs-{L}'
-    data_dir = f'data-{L}'
+    log_dir = f'logs/logs-{L}'
+    data_dir = f'data/data-{L}'
     submit_name = f'submit_{L}'
 
     # Slurm will not create these, and a missing log directory makes the array task fail
     # before it ever reaches python
-    (here / log_dir).mkdir(exist_ok=True)
-    (here / data_dir).mkdir(exist_ok=True)
+    (run_dir / log_dir).mkdir(parents=True)
+    (run_dir / data_dir).mkdir(parents=True)
 
-    submit_path = here / submit_name
+    submit_path = run_dir / submit_name
     submit_path.write_text(TEMPLATE.format(
         submit_name=submit_name, L=L, Nsamples=Nsamples, start=start, end=end,
         scan_human=scan_human, peak_gb=peak_gb, mem_safety=MEM_SAFETY, time_safety=TIME_SAFETY,
         job_name=job_name, walltime=format_walltime(walltime_hours), cpus=cpus_per_task,
-        mem_gb=mem_gb, log_dir=log_dir, data_dir=data_dir, theta_note=theta_note))
+        mem_gb=mem_gb, log_dir=log_dir, data_dir=data_dir, run_dir=run_dir,
+        script_path=script_path, theta_note=theta_note))
     submit_names.append(submit_name)
 
     print(f'{L:>4} {f"{start}-{end}":>12} {f"{mem_gb}G":>7} '
           f'{format_walltime(walltime_hours):>12} {scan_human:>12} {f"{peak_gb:.2f} GB":>10}')
 
-all_path = here / 'submit_all.sh'
+# cd first, so the driver works whether it is called by relative or absolute path
+all_path = run_dir / 'submit_all.sh'
 all_path.write_text('#!/bin/bash\n\n# Generated by generate_submits.py\n\n'
+                    'cd "$(dirname "$0")"\n\n'
                     + ''.join(f'sbatch {name}\n' for name in submit_names))
 all_path.chmod(all_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
-print(f'\nWrote {len(submit_names)} submit files and submit_all.sh')
+print(f'\nWrote {len(submit_names)} submit files, jobs.txt and the config snapshot.')
+print(f'Submit with:\n    {all_path}')
 
 # Cost model provenance
 # --------------------
