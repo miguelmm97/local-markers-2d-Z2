@@ -14,3 +14,9 @@ submit_all.sh
 # Simulation output
 data-*/
 logs-*/
+*.h5
+*.txt
+
+# Figures and notes are kept outside the repo
+*.pdf
+figures/
