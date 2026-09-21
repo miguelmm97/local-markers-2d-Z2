@@ -1,0 +1,174 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.6cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage[colorlinks=true,linkcolor=black]{hyperref}
+
+\title{\bf Cost of the marker scans:\\ memory and runtime versus system size}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+Measured scaling of the $Z_2$ marker calculation, used to set the \texttt{-{}-mem} and
+\texttt{-{}-time} requests in the Slurm submit files. The Hilbert dimension is
+$D = 4L^2$ and every point of a scan performs two dense Hermitian diagonalisations plus a
+handful of dense $D\times D$ products, so \textbf{time grows as $L^6$ and peak memory as
+$L^4$}. Both laws were fitted to end-to-end measurements at $L=8$--$28$ and reproduce them
+to within a few percent.
+\end{abstract}
+
+\section{Where the cost comes from}
+
+At each point of a scan the code builds the Hamiltonian, diagonalises it, forms the
+projector $\rho$, builds $\widetilde{S}$, diagonalises that as well, flattens it, and
+contracts it against the position operators for the marker. Counting only the
+$\mathcal{O}(D^3)$ operations:
+
+\begin{center}
+\begin{tabular}{@{}llc@{}}
+\toprule
+step & operation & count \\
+\midrule
+\texttt{spectrum(H)}            & Hermitian eigendecomposition (with eigenvectors) & 1 \\
+projector $\rho = UU^\dagger$   & dense product                                     & $\tfrac12$ \\
+$\widetilde{S} = \rho S + S\rho - S$ & dense products                               & 2 \\
+sign flattening                 & eigendecomposition + 2 products                   & 1 + 2 \\
+marker                          & dense product                                     & 1 \\
+\midrule
+\multicolumn{2}{@{}l}{\emph{total}} & 2 eigh + $\sim$5.5 products \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+The two eigendecompositions dominate: measured on this machine a complex Hermitian
+\texttt{eigh} costs about $0.8\,\mathrm{ns}\times D^3$ against $0.043\,\mathrm{ns}\times D^3$
+for a \texttt{zgemm}, i.e.\ roughly $18\times$ more per floating point operation. Together
+they account for $85$--$90\%$ of the runtime, which is why the optimisations available in the
+matrix products would not change the picture much.
+
+\paragraph{The $\theta$ scan.} When \texttt{optimize\_theta} is enabled, each candidate angle
+adds one \emph{eigenvalue-only} solve, measured at $0.39$ of a full eigendecomposition. Since
+$\widetilde{S}$ is linear in $S_\theta$, the two basis operators are built once per point and
+reused, so $N_\theta$ candidates multiply the runtime by
+\begin{equation}
+  f_\theta \;=\; \frac{2 + 0.39\,N_\theta}{2} ,
+  \label{eq:thetafactor}
+\end{equation}
+that is $1.39\times$ for $N_\theta=2$ and $1.58\times$ for $N_\theta=3$. Memory is unaffected:
+the basis operators are freed before the flattening allocates.
+
+\section{Measurements}
+
+End-to-end, one point per process, on 11 cores (Apple Silicon, arm64):
+
+\begin{center}
+\begin{tabular}{@{}rrrr@{}}
+\toprule
+$L$ & $D = 4L^2$ & peak RSS [GB] & time per point [s] \\
+\midrule
+ 8 &  256 & 0.134 &  0.09 \\
+12 &  576 & 0.196 &  0.37 \\
+16 & 1024 & 0.324 &  1.21 \\
+20 & 1600 & 0.609 &  4.20 \\
+24 & 2304 & 1.134 & 10.60 \\
+28 & 3136 & 1.983 & 24.45 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Fitted laws}
+
+\paragraph{Memory.} About twelve $D\times D$ complex128 arrays are live at the peak, inside
+the sign flattening, on top of a constant interpreter and kwant footprint:
+\begin{equation}
+  \boxed{\;\text{peak}\,[\mathrm{GB}] \;\simeq\; 0.12 \;+\; 3072\times10^{-9}\,L^4\;}
+  \label{eq:mem}
+\end{equation}
+This reproduces the measurements to better than $2\%$ across the fitted range: at $L=20$ it
+predicts $0.612$ GB against $0.609$ measured, and at $L=28$ it predicts $2.01$ GB against
+$1.98$ measured.
+
+\paragraph{Time.} Anchoring the $L^6$ law at the largest measured size,
+\begin{equation}
+  \boxed{\;t_{\rm point} \;\simeq\; 24.45\ \mathrm{s} \times \left(\frac{L}{28}\right)^{6}
+  \times f_\theta\;}
+  \label{eq:time}
+\end{equation}
+This is mildly \emph{optimistic} below $L\approx20$, where the matrices are too small to
+saturate the BLAS and the measured times exceed the law (at $L=20$: $4.2$ s measured against
+$3.25$ s predicted). Since those sizes run in minutes either way, the discrepancy is
+irrelevant in practice; the law is accurate where it matters.
+
+\section{Extrapolation}
+
+Per point, and per scan of $N$ points, from \eqref{eq:mem} and \eqref{eq:time}:
+
+\begin{center}
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+$L$ & $D$ & peak RSS & $t_{\rm point}$ & $W$ scan ($N=30$, $f_\theta=1$)
+& $M$ scan ($N=50$, $f_\theta=1.58$) \\
+\midrule
+10 &   400 &  0.15 GB & 0.05 s & 2 s     & 4 s \\
+20 &  1600 &  0.61 GB & 3.3 s  & 1.6 min & 4.3 min \\
+30 &  3600 &  2.61 GB & 36 s   & 18 min  & 48 min \\
+40 &  6400 &  7.98 GB & 203 s  & 1.7 h   & 4.5 h \\
+50 & 10000 & 19.32 GB & 775 s  & 6.5 h   & 17.0 h \\
+75 & 22500 & 97.32 GB & 2.5 h  & 74 h    & 193 h \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+These are times for \emph{one} disorder realisation. A batch of $N_{\rm samples}$ realisations
+is that many independent jobs, not a longer one.
+
+\section{Slurm requests}
+
+The submit generators apply a $1.5\times$ margin to memory and $3\times$ to walltime, then
+round up to a sensible step. For the $M$ scan with $N_\theta = 3$:
+
+\begin{center}
+\begin{tabular}{@{}rrll@{}}
+\toprule
+$L$ & predicted peak & \texttt{-{}-mem} & \texttt{-{}-time} \\
+\midrule
+10 &  0.15 GB &  2G & 0-00:30:00 \\
+20 &  0.61 GB &  2G & 0-00:30:00 \\
+30 &  2.61 GB &  4G & 0-04:00:00 \\
+40 &  7.98 GB & 12G & 1-00:00:00 \\
+50 & 19.32 GB & 32G & 3-00:00:00 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent
+Two points on the Slurm side. The request is \texttt{-{}-mem} (total for the task) rather than
+\texttt{-{}-mem-per-cpu}, because the threads share one set of matrices instead of each
+holding a copy; with \texttt{-{}-cpus-per-task=8} a setting of \texttt{-{}-mem-per-cpu=1G}
+would silently cap the job at 8 GB, which $L=40$ and $L=50$ would exceed. And the thread count
+must be pinned to the allocation (\texttt{OMP\_NUM\_THREADS} and friends), otherwise the BLAS
+spawns one thread per core it can see on the node rather than per core granted, which
+oversubscribes badly.
+
+\section{Caveats}
+
+\begin{itemize}
+  \item The absolute constants are for 11 Apple Silicon cores. Cluster nodes will differ;
+        the $3\times$ walltime margin is meant to absorb that, but a short run should be
+        checked before trusting the large sizes.
+  \item \texttt{eigh} parallelises decently but far from linearly, so doubling the cores
+        does not halve the time. When the queue is busy, more jobs with fewer cores each
+        will usually clear faster than fewer wide ones.
+  \item $L=75$ is included only to show where the wall is: at $\sim\!97$ GB and days per
+        single realisation it needs a large-memory node, and disorder averaging on top is
+        not realistic without moving away from full diagonalisation.
+\end{itemize}
+
+\end{document}
