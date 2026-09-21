@@ -132,10 +132,11 @@ loger_main.info(f'theta_k={theta_k:.4f}, optimize_theta={optimize_theta}, '
 # Main: marker and widest gap of S_tilde over the candidate angles, for each mass M
 # ============================================================
 
-marker_vec    = np.zeros(len(M_vec))
-gap_vec       = np.zeros(len(M_vec))
-gap_H_vec     = np.zeros(len(M_vec))
-theta_opt_vec = np.zeros(len(M_vec))
+marker_vec      = np.zeros(len(M_vec))
+gap_vec         = np.zeros(len(M_vec))
+gap_H_vec       = np.zeros(len(M_vec))
+theta_opt_vec   = np.zeros(len(M_vec))
+marker_sites    = np.zeros((int(N ** 2), len(M_vec)))
 
 # Amorphous lattice. The disorder strength is fixed for the whole scan
 Nx = Ny = N
@@ -178,8 +179,8 @@ for i, M in enumerate(M_vec):
     # Marker and gap of S_tilde at the chosen angle
     S_tilde, gap_vec[i], _ = get_S_tilde_and_gap(rho, theta_opt, dim_Hext)
     del rho
-    marker_sites = marker_per_site_speedup(lattice.x, lattice.y, S_tilde, Nx=Nx, Ny=Ny, boundary=lattice.boundary)
-    marker_vec[i] = marker_sites.mean()
+    marker_sites[:, i] = marker_per_site_speedup(lattice.x, lattice.y, S_tilde, Nx=Nx, Ny=Ny, boundary=lattice.boundary)
+    marker_vec[i] = marker_sites[:, i].mean()
     del S_tilde
 
 
@@ -195,11 +196,14 @@ with h5py.File(filepath, 'w') as f:
 
     # Simulation folder
     simulation = f.create_group('Simulation')
-    store_my_data(simulation, 'marker',    marker_vec)
-    store_my_data(simulation, 'H_gap',     gap_H_vec)
-    store_my_data(simulation, 'Gamma_gap', gap_vec)
-    store_my_data(simulation, 'theta_opt', theta_opt_vec)
-    store_my_data(simulation, 'M',         M_vec)
+    store_my_data(simulation, 'marker',          marker_vec)
+    store_my_data(simulation, 'marker_per_site', marker_sites)
+    store_my_data(simulation, 'H_gap',           gap_H_vec)
+    store_my_data(simulation, 'Gamma_gap',       gap_vec)
+    store_my_data(simulation, 'theta_opt',       theta_opt_vec)
+    store_my_data(simulation, 'M',               M_vec)
+    store_my_data(simulation, 'x',               lattice.x)
+    store_my_data(simulation, 'y',               lattice.y)
 
     # Parameters folder
     parameters = f.create_group('Parameters')
